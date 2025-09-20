@@ -33,7 +33,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # Токен бота
-BOT_TOKEN = "7967571815:AAFPNJBLjWOaB5VJhTl3DUqdo5lp7yY_-c0"
+BOT_TOKEN = os.getenv("BOT_TOKEN")
 
 # Инициализация бота и диспетчера
 bot = Bot(token=BOT_TOKEN)
@@ -573,4 +573,5 @@ async def main():
     await dp.start_polling(bot)
 
 if __name__ == "__main__":
+
     asyncio.run(main())
