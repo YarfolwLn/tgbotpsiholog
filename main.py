@@ -418,7 +418,11 @@ async def back_to_main(message: types.Message, state: FSMContext):
     current_state = await state.get_state()
     if current_state:
         await state.clear()
-    await message.answer("Главное меню:", reply_markup=get_main_keyboard())
+    await message.answer("--Главное меню--\n"
+"- «📅 Записаться на прием» - запись на приём"
+"- «📅 Свободные даты» - доступное время для записи"
+"- «📋 Мои записи» - просмотр ваших записей"
+"Выберите действие из меню ниже:", reply_markup=get_main_keyboard())
 
 @dp.message(F.text == "🚪 Выход")
 async def exit_process(message: types.Message, state: FSMContext):
@@ -575,3 +579,4 @@ async def main():
 if __name__ == "__main__":
 
     asyncio.run(main())
+
