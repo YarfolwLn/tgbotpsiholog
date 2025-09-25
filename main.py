@@ -183,6 +183,39 @@ def get_exit_keyboard():
         one_time_keyboard=True
     )
 
+# Функция для проверки корректности даты
+def is_valid_future_date(date_str):
+    """Проверяет, что дата корректна и находится в будущем"""
+    try:
+        # Парсим дату
+        input_date = datetime.strptime(date_str, '%d.%m.%Y')
+        
+        # Получаем текущую дату (без времени)
+        current_date = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+        
+        # Проверяем что дата не в прошлом
+        if input_date < current_date:
+            return False, "❌ Нельзя выбрать прошедшую дату. Пожалуйста, введите будущую дату:"
+        
+        # Проверяем что дата не слишком далеко в будущем (например, не более 1 года)
+        max_future_date = current_date + timedelta(days=365)
+        if input_date > max_future_date:
+            return False, "❌ Дата слишком далеко в будущем. Пожалуйста, выберите дату в пределах года:"
+        
+        return True, "Дата корректна"
+        
+    except ValueError:
+        return False, "❌ Неверный формат даты. Используйте ДД.ММ.ГГГГ (например, 25.12.2024):"
+
+# Функция для проверки корректности времени
+def is_valid_time(time_str):
+    """Проверяет корректность формата времени"""
+    try:
+        datetime.strptime(time_str, '%H:%M')
+        return True, "Время корректно"
+    except ValueError:
+        return False, "❌ Неверный формат времени. Используйте ЧЧ:MM (например, 14:30):"
+
 # Функция для отправки уведомлений администратору
 async def send_notification_to_admin(user_data, chosen_date_time, situation):
     """Отправка уведомления администратору о новой заявке"""
@@ -246,7 +279,8 @@ async def cmd_help(message: types.Message, state: FSMContext):
 
 📅 **Запись на прием:**
 - Нажмите «📅 Записаться на прием»
-- Введите желаемую дату и время
+- Введите желаемую дату (только будущие даты)
+- Введите желаемое время
 - Введите ваше имя, телефон и ситуацию
 - Администратор свяжется с вами для подтверждения
 
@@ -268,12 +302,13 @@ async def help_command(message: types.Message, state: FSMContext):
 @dp.message(F.text == "📅 Записаться на прием")
 async def book_appointment(message: types.Message, state: FSMContext):
     await message.answer(
-        "📅 Введите желаемую дату приема в формате ДД.ММ.ГГГГ (например, 25.12.2024):",
+        "📅 Введите желаемую дату приема в формате ДД.ММ.ГГГГ (например, 25.12.2024):\n\n"
+        "⚠️ Можно записываться только на будущие даты!",
         reply_markup=get_exit_keyboard()
     )
     await state.set_state(AppointmentState.choosing_date)
 
-# Обработка ввода даты
+# Обработка ввода даты с проверкой
 @dp.message(AppointmentState.choosing_date)
 async def process_date_input(message: types.Message, state: FSMContext):
     if message.text == "🚪 Выход":
@@ -281,15 +316,24 @@ async def process_date_input(message: types.Message, state: FSMContext):
         return
         
     input_date = message.text.strip()
+    
+    # Проверяем корректность даты
+    is_valid, message_text = is_valid_future_date(input_date)
+    
+    if not is_valid:
+        await message.answer(message_text, reply_markup=get_exit_keyboard())
+        return
+    
     await state.update_data(chosen_date=input_date)
     
     await message.answer(
+        "✅ Дата принята!\n\n"
         "⏰ Теперь введите желаемое время приема в формате ЧЧ:MM (например, 14:30):",
         reply_markup=get_exit_keyboard()
     )
     await state.set_state(AppointmentState.choosing_time)
 
-# Обработка ввода времени
+# Обработка ввода времени с проверкой
 @dp.message(AppointmentState.choosing_time)
 async def process_time_input(message: types.Message, state: FSMContext):
     if message.text == "🚪 Выход":
@@ -297,6 +341,14 @@ async def process_time_input(message: types.Message, state: FSMContext):
         return
         
     input_time = message.text.strip()
+    
+    # Проверяем корректность времени
+    is_valid, message_text = is_valid_time(input_time)
+    
+    if not is_valid:
+        await message.answer(message_text, reply_markup=get_exit_keyboard())
+        return
+    
     await state.update_data(chosen_time=input_time)
     
     # Получаем выбранные дату и время
@@ -304,6 +356,7 @@ async def process_time_input(message: types.Message, state: FSMContext):
     chosen_date = user_data['chosen_date']
     
     await message.answer(
+        f"✅ Время принято!\n\n"
         f"📅 Вы выбрали: {chosen_date} {input_time}\n\n"
         "Теперь введите ваше имя:",
         reply_markup=get_exit_keyboard()
