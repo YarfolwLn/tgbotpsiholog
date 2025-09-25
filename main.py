@@ -33,7 +33,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # Токен бота
-BOT_TOKEN = os.getenv("TELEGRAM_TOKEN")
+BOT_TOKEN = "7967571815:AAFPNJBLjWOaB5VJhTl3DUqdo5lp7yY_-c0"
 
 # Инициализация бота и диспетчера
 bot = Bot(token=BOT_TOKEN)
@@ -418,7 +418,13 @@ async def back_to_main(message: types.Message, state: FSMContext):
     current_state = await state.get_state()
     if current_state:
         await state.clear()
-    await message.answer("Главное меню:", reply_markup=get_main_keyboard())
+    await message.answer("""
+--Главное меню--\n
+- «📅 Записаться на прием» - запись на приём
+- «📅 Свободные даты» - доступное время для записи
+- «📋 Мои записи» - просмотр ваших записей
+"Выберите действие из меню ниже:
+                         """, reply_markup=get_main_keyboard())
 
 @dp.message(F.text == "🚪 Выход")
 async def exit_process(message: types.Message, state: FSMContext):
@@ -497,7 +503,30 @@ async def process_phone(message: types.Message, state: FSMContext):
     )
     await state.set_state(AppointmentState.user_situation)
 
-# Обработка ситуации и завершение записи
+# Добавьте эту функцию для отправки уведомлений
+async def send_notification_to_admin(user_data, chosen_date_time, situation):
+    """Отправка уведомления администратору о новой записи"""
+    try:
+        admin_chat_id = os.getenv("ADMIN_ID")  # Замените на нужный ID или username
+        
+        notification_text = (
+            "🔔 **НОВАЯ ЗАПИСЬ НА КОНСУЛЬТАЦИЮ**\n\n"
+            f"📅 **Дата и время:** {chosen_date_time}\n"
+            f"👤 **Имя клиента:** {user_data['user_name']}\n"
+            f"📞 **Телефон:** {user_data['user_phone']}\n"
+            f"🆔 **Telegram ID:** {user_data['user_id']}\n"
+        )
+        
+        if situation:
+            notification_text += f"📝 **Ситуация:** {situation}\n"
+        
+        await bot.send_message(chat_id=admin_chat_id, text=notification_text)
+        logger.info(f"Уведомление отправлено администратору о записи {chosen_date_time}")
+        
+    except Exception as e:
+        logger.error(f"Ошибка при отправке уведомления администратору: {e}")
+
+# Модифицируйте функцию process_situation
 @dp.message(AppointmentState.user_situation)
 async def process_situation(message: types.Message, state: FSMContext):
     if message.text == "🚪 Выход":
@@ -513,6 +542,9 @@ async def process_situation(message: types.Message, state: FSMContext):
     user_name = user_data['user_name']
     user_phone = user_data['user_phone']
     user_id = message.from_user.id
+    
+    # Добавляем user_id в user_data для уведомления
+    user_data['user_id'] = user_id
     
     # Записываем в Excel
     success = excel_manager.book_appointment(chosen_date_time, user_name, user_id, user_phone, situation)
@@ -536,6 +568,10 @@ async def process_situation(message: types.Message, state: FSMContext):
         )
         
         await message.answer(response, reply_markup=get_main_keyboard())
+        
+        # Отправляем уведомление администратору
+        await send_notification_to_admin(user_data, chosen_date_time, situation)
+        
     else:
         await message.answer(
             "❌ К сожалению, это время уже занято. Пожалуйста, выберите другое время из списка.",
@@ -573,6 +609,4 @@ async def main():
     await dp.start_polling(bot)
 
 if __name__ == "__main__":
-
     asyncio.run(main())
-
