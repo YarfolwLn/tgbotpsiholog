@@ -205,7 +205,7 @@ def is_valid_future_date(date_str):
         return True, "Дата корректна"
         
     except ValueError:
-        return False, "❌ Неверный формат даты. Используйте ДД.ММ.ГГГГ (например, 25.12.2024):"
+        return False, "❌ Неверный формат даты. Используйте ДД.ММ.ГГГГ (например, 01.01.2025):"
 
 # Функция для проверки корректности времени
 def is_valid_time(time_str):
@@ -302,8 +302,7 @@ async def help_command(message: types.Message, state: FSMContext):
 @dp.message(F.text == "📅 Записаться на прием")
 async def book_appointment(message: types.Message, state: FSMContext):
     await message.answer(
-        "📅 Введите желаемую дату приема в формате ДД.ММ.ГГГГ (например, 25.12.2024):\n\n"
-        "⚠️ Можно записываться только на будущие даты!",
+        "📅 Введите желаемую дату приема в формате ДД.ММ.ГГГГ (например, 25.12.2024):\n\n",
         reply_markup=get_exit_keyboard()
     )
     await state.set_state(AppointmentState.choosing_date)
@@ -356,7 +355,6 @@ async def process_time_input(message: types.Message, state: FSMContext):
     chosen_date = user_data['chosen_date']
     
     await message.answer(
-        f"✅ Время принято!\n\n"
         f"📅 Вы выбрали: {chosen_date} {input_time}\n\n"
         "Теперь введите ваше имя:",
         reply_markup=get_exit_keyboard()
@@ -379,7 +377,7 @@ async def my_appointments(message: types.Message):
                     response += f"   **Ситуация:** {appt['situation']}\n"
                 response += "\n"
             
-            response += "📞 Администратор свяжется с вами для подтверждения записи."
+            response += "С вами свяжутся для подтверждения записи."
             await message.answer(response)
         else:
             await message.answer(
@@ -538,3 +536,4 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.run(main())
+
