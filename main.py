@@ -500,7 +500,7 @@ async def process_time_for_days(message: types.Message, state: FSMContext):
         
         await message.answer(
             f"✅ День недели: {current_day}, Время: {message.text.strip()}\n\n"
-            f"⏰ Теперь введите удобное время для следующего выбранного дня в формате ЧЧ:MM-ЧЧ:MM\n\n"
+            f"⏰ Теперь введите удобное время для следующего выбранного дня в формате ЧЧ:MM-ЧЧ:MM\n"
             "Например: 9:00-12:00 или 14:00-16:00\n\n"
             f"{next_day}:",
             reply_markup=get_time_input_keyboard()
@@ -596,6 +596,7 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.run(main())
+
 
 
 
