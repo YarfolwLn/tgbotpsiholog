@@ -50,50 +50,39 @@ def init_excel_file():
         ws = wb.active
         ws.title = "Записи"
         
-        # Заголовки
-        headers = ["Дата", "Время", "Имя пользователя", "Телеграм ID", "Телефон", "Ситуация", "Статус"]
+        # Заголовки (измененные)
+        headers = ["Дни недели", "Время", "Имя пользователя", "Телеграм ID", "Телефон", "Ситуация", "Статус"]
         for col, header in enumerate(headers, 1):
             ws.cell(row=1, column=col, value=header)
         
         # Устанавливаем ширину колонок
-        column_widths = [15, 10, 20, 15, 15, 30, 15]
+        column_widths = [20, 20, 20, 15, 15, 30, 15]
         for col, width in enumerate(column_widths, 1):
             col_letter = openpyxl.utils.get_column_letter(col)
             ws.column_dimensions[col_letter].width = width
         
         # Создаем стили для ячеек
-        date_style = NamedStyle(name="date_style", number_format='DD.MM.YYYY')
-        time_style = NamedStyle(name="time_style", number_format='HH:MM')
         text_style = NamedStyle(name="text_style", number_format='@')  # Текстовый формат
         
         # Добавляем стили в книгу
-        if 'date_style' not in wb.named_styles:
-            wb.add_named_style(date_style)
-        if 'time_style' not in wb.named_styles:
-            wb.add_named_style(time_style)
         if 'text_style' not in wb.named_styles:
             wb.add_named_style(text_style)
         
         # Устанавливаем форматы для столбцов
-        for row in range(2, 50):  # Устанавливаем для первых 50 строк
-            ws.cell(row=row, column=1).style = 'date_style'    # Дата
-            ws.cell(row=row, column=2).style = 'time_style'    # Время
-            ws.cell(row=row, column=3).style = 'text_style'    # Имя
-            ws.cell(row=row, column=4).style = 'text_style'    # Телеграм ID
-            ws.cell(row=row, column=5).style = 'text_style'    # Телефон
-            ws.cell(row=row, column=6).style = 'text_style'    # Ситуация
-            ws.cell(row=row, column=7).style = 'text_style'    # Статус
+        for row in range(2, 100):  # Устанавливаем для большего количества строк
+            for col in range(1, 8):  # Все колонки текстовые
+                ws.cell(row=row, column=col).style = 'text_style'
         
         wb.save(EXCEL_FILE)
         logger.info("Excel файл создан с правильными форматами ячеек")
 
 # Состояния FSM
 class AppointmentState(StatesGroup):
-    choosing_date = State()
-    choosing_time = State()
     user_name = State()
     user_phone = State()
     user_situation = State()
+    choosing_days = State()
+    entering_time_for_days = State()
 
 # Класс для работы с Excel
 class ExcelManager:
@@ -101,23 +90,30 @@ class ExcelManager:
         self.file_path = file_path
         self.red_fill = PatternFill(start_color="FFB6C1", end_color="FFB6C1", fill_type="solid")
     
-    def book_appointment(self, date_str, time_str, username, user_id, phone, situation):
-        """Просто записываем данные без проверки занятости"""
+    def get_next_empty_row(self, ws):
+        """Находит следующую пустую строку в таблице"""
+        row = 2  # Начинаем с 2 строки (после заголовков)
+        while ws.cell(row=row, column=1).value is not None:
+            row += 1
+        return row
+    
+    def book_appointment(self, days_str, time_range_str, username, user_id, phone, situation):
+        """Записываем данные с днями недели и диапазоном времени"""
         try:
             wb = load_workbook(self.file_path)
             ws = wb.active
             
             # Находим первую свободную строку
-            new_row = ws.max_row + 1
+            new_row = self.get_next_empty_row(ws)
             
-            # Записываем данные
-            ws.cell(row=new_row, column=1, value=date_str)
-            ws.cell(row=new_row, column=2, value=time_str)
-            ws.cell(row=new_row, column=3, value=str(username))
-            ws.cell(row=new_row, column=4, value=str(user_id))
-            ws.cell(row=new_row, column=5, value=str(phone))
-            ws.cell(row=new_row, column=6, value=str(situation))
-            ws.cell(row=new_row, column=7, value="Ожидает подтверждения")  # Изменили статус
+            # Записываем данные (измененные колонки)
+            ws.cell(row=new_row, column=1, value=str(days_str))      # Дни недели
+            ws.cell(row=new_row, column=2, value=str(time_range_str)) # Диапазон времени
+            ws.cell(row=new_row, column=3, value=str(username))      # Имя
+            ws.cell(row=new_row, column=4, value=str(user_id))       # Телеграм ID
+            ws.cell(row=new_row, column=5, value=str(phone))         # Телефон
+            ws.cell(row=new_row, column=6, value=str(situation))     # Ситуация
+            ws.cell(row=new_row, column=7, value="Ожидает подтверждения")  # Статус
             
             # Красим строку для визуального выделения
             for col in range(1, 8):
@@ -125,39 +121,52 @@ class ExcelManager:
             
             wb.save(self.file_path)
             wb.close()
+            logger.info(f"Запись сохранена в строке {new_row}")
             return True
             
         except Exception as e:
             logger.error(f"Ошибка при записи в Excel: {e}")
             return False
-
-    def get_user_appointments(self, user_id):
-        """Получить записи пользователя"""
+    
+    def book_multiple_appointments(self, selected_days, days_with_times, username, user_id, phone, situation):
+        """Создает отдельные записи для каждой пары день-время"""
         try:
             wb = load_workbook(self.file_path)
             ws = wb.active
             
-            user_appointments = []
-            for row in range(2, ws.max_row + 1):
-                user_id_cell = ws.cell(row=row, column=4)
-                if user_id_cell.value == str(user_id):
-                    date = ws.cell(row=row, column=1).value
-                    time = ws.cell(row=row, column=2).value
-                    situation = ws.cell(row=row, column=6).value
-                    status = ws.cell(row=row, column=7).value
-                    user_appointments.append({
-                        'date': date,
-                        'time': time,
-                        'situation': situation,
-                        'status': status
-                    })
+            success_count = 0
             
+            # Для каждого дня создаем отдельную запись
+            for day in selected_days:
+                time_range = days_with_times.get(day, "")
+                if time_range:
+                    # Находим первую свободную строку для каждой записи
+                    new_row = self.get_next_empty_row(ws)
+                    
+                    # Записываем данные для каждого дня отдельно
+                    ws.cell(row=new_row, column=1, value=str(day))          # День недели
+                    ws.cell(row=new_row, column=2, value=str(time_range))   # Диапазон времени
+                    ws.cell(row=new_row, column=3, value=str(username))     # Имя
+                    ws.cell(row=new_row, column=4, value=str(user_id))      # Телеграм ID
+                    ws.cell(row=new_row, column=5, value=str(phone))        # Телефон
+                    ws.cell(row=new_row, column=6, value=str(situation))    # Ситуация
+                    ws.cell(row=new_row, column=7, value="Ожидает подтверждения")  # Статус
+                    
+                    # Красим строку для визуального выделения
+                    for col in range(1, 8):
+                        ws.cell(row=new_row, column=col).fill = self.red_fill
+                    
+                    success_count += 1
+                    logger.info(f"Запись для дня {day} сохранена в строке {new_row}")
+            
+            wb.save(self.file_path)
             wb.close()
-            return user_appointments
+            logger.info(f"Создано {success_count} записей в Excel")
+            return success_count > 0
             
         except Exception as e:
-            logger.error(f"Ошибка при чтении записей пользователя: {e}")
-            return []
+            logger.error(f"Ошибка при записи в Excel: {e}")
+            return False
 
 # Инициализация менеджера Excel
 excel_manager = ExcelManager(EXCEL_FILE)
@@ -167,7 +176,6 @@ def get_main_keyboard():
     keyboard = ReplyKeyboardMarkup(
         keyboard=[
             [KeyboardButton(text="📅 Записаться на прием")],
-            [KeyboardButton(text="📋 Мои записи")],
             [KeyboardButton(text="🆘 Помощь")]
         ],
         resize_keyboard=True,
@@ -175,65 +183,80 @@ def get_main_keyboard():
     )
     return keyboard
 
-def get_exit_keyboard():
-    """Клавиатура с кнопкой выхода"""
+def get_back_to_main_keyboard():
+    """Клавиатура с кнопкой возврата в главное меню"""
     return ReplyKeyboardMarkup(
-        keyboard=[[KeyboardButton(text="🚪 Выход")]],
+        keyboard=[[KeyboardButton(text="↩️ В главное меню")]],
         resize_keyboard=True,
         one_time_keyboard=True
     )
 
-# Функция для проверки корректности даты
-def is_valid_future_date(date_str):
-    """Проверяет, что дата корректна и находится в будущем"""
-    try:
-        # Парсим дату
-        input_date = datetime.strptime(date_str, '%d.%m.%Y')
-        
-        # Получаем текущую дату (без времени)
-        current_date = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
-        
-        # Проверяем что дата не в прошлом
-        if input_date < current_date:
-            return False, "❌ Нельзя выбрать прошедшую дату. Пожалуйста, введите будущую дату:"
-        
-        # Проверяем что дата не слишком далеко в будущем (например, не более 1 года)
-        max_future_date = current_date + timedelta(days=365)
-        if input_date > max_future_date:
-            return False, "❌ Дата слишком далеко в будущем. Пожалуйста, выберите дату в пределах года:"
-        
-        return True, "Дата корректна"
-        
-    except ValueError:
-        return False, "❌ Неверный формат даты. Используйте ДД.ММ.ГГГГ (например, 01.01.2025):"
+def get_days_keyboard():
+    """Клавиатура для выбора дней недели с кнопкой возврата в главное меню"""
+    keyboard = ReplyKeyboardMarkup(
+        keyboard=[
+            [KeyboardButton(text="Понедельник"), KeyboardButton(text="Вторник")],
+            [KeyboardButton(text="Среда"), KeyboardButton(text="Четверг")],
+            [KeyboardButton(text="Пятница"), KeyboardButton(text="Суббота")],
+            [KeyboardButton(text="Воскресенье")],
+            [KeyboardButton(text="✅ Завершить выбор дней")],
+            [KeyboardButton(text="↩️ В главное меню")]
+        ],
+        resize_keyboard=True,
+        one_time_keyboard=True
+    )
+    return keyboard
+
+def get_time_input_keyboard():
+    """Клавиатура для ввода времени с кнопкой возврата в главное меню"""
+    return ReplyKeyboardMarkup(
+        keyboard=[[KeyboardButton(text="↩️ В главное меню")]],
+        resize_keyboard=True,
+        one_time_keyboard=True
+    )
 
 # Функция для проверки корректности времени
-def is_valid_time(time_str):
-    """Проверяет корректность формата времени"""
+def is_valid_time_range(time_str):
+    """Проверяет корректность формата диапазона времени (например, 9:00-12:00)"""
     try:
-        datetime.strptime(time_str, '%H:%M')
-        return True, "Время корректно"
+        if '-' not in time_str:
+            return False, "❌ Используйте формат ЧЧ:MM-ЧЧ:MM (например, 9:00-12:00)"
+        
+        start_time_str, end_time_str = time_str.split('-')
+        
+        # Проверяем оба времени
+        start_time = datetime.strptime(start_time_str.strip(), '%H:%M')
+        end_time = datetime.strptime(end_time_str.strip(), '%H:%M')
+        
+        if start_time >= end_time:
+            return False, "❌ Время начала должно быть раньше времени окончания"
+        
+        return True, "Диапазон времени корректен"
+        
     except ValueError:
-        return False, "❌ Неверный формат времени. Используйте ЧЧ:MM (например, 14:30):"
+        return False, "❌ Неверный формат времени. Используйте ЧЧ:MM-ЧЧ:MM (например, 9:00-12:00):"
 
 # Функция для отправки уведомлений администратору
-async def send_notification_to_admin(user_data, chosen_date_time, situation):
+async def send_notification_to_admin(user_data, days_with_times):
     """Отправка уведомления администратору о новой заявке"""
     try:
         admin_chat_id = os.getenv("ADMIN_ID")  # Замените на нужный ID администратора
         
         notification_text = (
             "🔔 НОВАЯ ЗАЯВКА НА КОНСУЛЬТАЦИЮ\n\n"
-            f"📅 Желаемая дата и время: {chosen_date_time}\n"
             f"👤 Имя клиента: {user_data['user_name']}\n"
             f"📞 Телефон: {user_data['user_phone']}\n"
             f"🆔 Telegram ID: {user_data['user_id']}\n"
-            f"📋 Статус: Ожидает подтверждения\n"
         )
         
-        if situation:
-            notification_text += f"📝 Ситуация: {situation}\n"
+        if user_data['user_situation']:
+            notification_text += f"📝 Ситуация: {user_data['user_situation']}\n"
         
+        notification_text += f"\n📅 Предпочтительные дни и время:\n"
+        for day, time_range in days_with_times.items():
+            notification_text += f"• {day}: {time_range}\n"
+        
+        notification_text += "\n📋 Статус: Ожидает подтверждения\n"
         notification_text += "\n⚠️ Свяжитесь с клиентом для подтверждения записи"
         
         await bot.send_message(chat_id=admin_chat_id, text=notification_text)
@@ -257,8 +280,7 @@ async def cmd_start(message: types.Message, state: FSMContext):
         await message.answer(
             "👋 Добро пожаловать в бота по записи на приём!\n\n"
             "Я ваш виртуальный помощник. Я могу:\n"
-            "• 📅 Записать вас на прием к психологу\n"
-            "• 📋 Показать ваши активные записи\n\n"
+            "• 📅 Записать вас на прием к психологу\n\n"
             "Выберите действие из меню ниже:",
             reply_markup=get_main_keyboard()
         )
@@ -279,19 +301,18 @@ async def cmd_help(message: types.Message, state: FSMContext):
 
 📅 Запись на прием:
 - Нажмите «📅 Записаться на прием»
-- Введите желаемую дату
-- Введите желаемое время
-- Введите ваше имя, телефон и ситуацию
+- Введите ваше имя
+- Введите ваш номер телефона
+- Опишите вашу ситуацию
+- Выберите подходящие дни недели (можно несколько)
+- Для каждого дня введите удобный диапазон времени
 
-📋 Мои записи:
-- Просмотр ваших текущих заявок
-
-🚪 Управление:
-- «🚪 Выход» - прервать процесс записи
+↩️ Управление:
+- «↩️ В главное меню» - прервать процесс записи на любом этапе
 
 Для начала работы нажмите /start
     """
-    await message.answer(help_text)
+    await message.answer(help_text, reply_markup=get_main_keyboard())
 
 @dp.message(F.text == "🆘 Помощь")
 async def help_command(message: types.Message, state: FSMContext):
@@ -300,104 +321,249 @@ async def help_command(message: types.Message, state: FSMContext):
 @dp.message(F.text == "📅 Записаться на прием")
 async def book_appointment(message: types.Message, state: FSMContext):
     await message.answer(
-        "📅 Введите желаемую дату приема в формате ДД.ММ.ГГГГ (например, 01.01.2025):\n\n",
-        reply_markup=get_exit_keyboard()
-    )
-    await state.set_state(AppointmentState.choosing_date)
-
-# Обработка ввода даты с проверкой
-@dp.message(AppointmentState.choosing_date)
-async def process_date_input(message: types.Message, state: FSMContext):
-    if message.text == "🚪 Выход":
-        await exit_process(message, state)
-        return
-        
-    input_date = message.text.strip()
-    
-    # Проверяем корректность даты
-    is_valid, message_text = is_valid_future_date(input_date)
-    
-    if not is_valid:
-        await message.answer(message_text, reply_markup=get_exit_keyboard())
-        return
-    
-    await state.update_data(chosen_date=input_date)
-    
-    await message.answer(
-        "✅ Дата принята!\n\n"
-        "⏰ Теперь введите желаемое время приема в формате ЧЧ:MM (например, 14:30):",
-        reply_markup=get_exit_keyboard()
-    )
-    await state.set_state(AppointmentState.choosing_time)
-
-# Обработка ввода времени с проверкой
-@dp.message(AppointmentState.choosing_time)
-async def process_time_input(message: types.Message, state: FSMContext):
-    if message.text == "🚪 Выход":
-        await exit_process(message, state)
-        return
-        
-    input_time = message.text.strip()
-    
-    # Проверяем корректность времени
-    is_valid, message_text = is_valid_time(input_time)
-    
-    if not is_valid:
-        await message.answer(message_text, reply_markup=get_exit_keyboard())
-        return
-    
-    await state.update_data(chosen_time=input_time)
-    
-    # Получаем выбранные дату и время
-    user_data = await state.get_data()
-    chosen_date = user_data['chosen_date']
-    
-    await message.answer(
-        f"📅 Вы выбрали: {chosen_date} {input_time}\n\n"
-        "Теперь введите ваше имя:",
-        reply_markup=get_exit_keyboard()
+        "👤 Введите ваше имя:\n\n"
+        "❕ В любой момент вы можете прервать запись, нажав «↩️ В главное меню»",
+        reply_markup=get_back_to_main_keyboard()
     )
     await state.set_state(AppointmentState.user_name)
 
-@dp.message(F.text == "📋 Мои записи")
-async def my_appointments(message: types.Message):
-    user_id = message.from_user.id
-    try:
-        appointments = excel_manager.get_user_appointments(user_id)
+# Обработка имени
+@dp.message(AppointmentState.user_name)
+async def process_name(message: types.Message, state: FSMContext):
+    if message.text == "↩️ В главное меню":
+        await back_to_main_process(message, state)
+        return
         
-        if appointments:
-            response = "📋 Ваши заявки на консультацию:\n\n"
-            for i, appt in enumerate(appointments, 1):
-                response += f"{i}. Дата: {appt['date']}\n"
-                response += f"   Время: {appt['time']}\n"
-                if appt['situation']:
-                    response += f"   Ситуация: {appt['situation']}\n"
-                response += "\n"
-            
-            response += "📞С вами свяжутся для подтверждения записи."
-            await message.answer(response)
-        else:
+    if len(message.text.strip()) < 2:
+        await message.answer(
+            "❌ Имя должно содержать хотя бы 2 символа. Пожалуйста, введите ваше имя:\n\n"
+            "❕ В любой момент вы можете прервать запись, нажав «↩️ В главное меню»",
+            reply_markup=get_back_to_main_keyboard()
+        )
+        return
+        
+    await state.update_data(user_name=message.text.strip())
+    await message.answer(
+        "✅ Имя принято!\n\n"
+        "📞 Теперь введите ваш номер телефона (в любом формате):\n\n"
+        "❕ В любой момент вы можете прервать запись, нажав «↩️ В главное меню»",
+        reply_markup=get_back_to_main_keyboard()
+    )
+    await state.set_state(AppointmentState.user_phone)
+
+# Обработка телефона
+@dp.message(AppointmentState.user_phone)
+async def process_phone(message: types.Message, state: FSMContext):
+    if message.text == "↩️ В главное меню":
+        await back_to_main_process(message, state)
+        return
+        
+    phone = message.text.strip()
+    if len(phone) < 5:
+        await message.answer(
+            "❌ Номер телефона слишком короткий. Пожалуйста, введите корректный номер:\n\n"
+            "❕ В любой момент вы можете прервать запись, нажав «↩️ В главное меню»",
+            reply_markup=get_back_to_main_keyboard()
+        )
+        return
+        
+    await state.update_data(user_phone=phone)
+    await message.answer(
+        "✅ Телефон принят!\n\n"
+        "📝 Опишите кратко вашу ситуацию или проблему, с которой хотите обратиться "
+        "(это поможет психологу лучше подготовиться к встрече):\n\n"
+        "Если не хотите описывать, отправьте \"-\" или \"пропустить\"\n\n"
+        "❕ В любой момент вы можете прервать запись, нажав «↩️ В главное меню»",
+        reply_markup=get_back_to_main_keyboard()
+    )
+    await state.set_state(AppointmentState.user_situation)
+
+# Обработка ситуации
+@dp.message(AppointmentState.user_situation)
+async def process_situation(message: types.Message, state: FSMContext):
+    if message.text == "↩️ В главное меню":
+        await back_to_main_process(message, state)
+        return
+        
+    situation = message.text.strip()
+    if situation.lower() in ["-", "пропустить", "нет", "не хочу"]:
+        situation = ""
+        
+    await state.update_data(user_situation=situation)
+    
+    await message.answer(
+        "✅ Ситуация принята!\n\n"
+        "📅 Теперь выберите подходящие дни недели для приема:\n\n"
+        "Нажимайте на кнопки с днями недели, которые вам подходят.\n"
+        "Вы можете выбрать несколько дней.\n"
+        "Когда закончите, нажмите «✅ Завершить выбор дней»\n\n"
+        "❕ В любой момент вы можете прервать запись, нажав «↩️ В главное меню»",
+        reply_markup=get_days_keyboard()
+    )
+    await state.set_state(AppointmentState.choosing_days)
+    await state.update_data(selected_days=[])  # Инициализируем пустой список выбранных дней
+
+# Обработка выбора дней недели
+@dp.message(AppointmentState.choosing_days)
+async def process_days_selection(message: types.Message, state: FSMContext):
+    if message.text == "↩️ В главное меню":
+        await back_to_main_process(message, state)
+        return
+        
+    user_data = await state.get_data()
+    selected_days = user_data.get('selected_days', [])
+    
+    days_of_week = ["Понедельник", "Вторник", "Среда", "Четверг", "Пятница", "Суббота", "Воскресенье"]
+    
+    if message.text in days_of_week:
+        if message.text not in selected_days:
+            selected_days.append(message.text)
             await message.answer(
-                "📝 У вас пока нет активных заявок. "
-                "Хотите оставить заявку на консультацию? Нажмите «📅 Записаться на прием»"
+                f"✅ Добавлен: {message.text}\n\n"
+                f"Выбранные дни: {', '.join(selected_days)}\n\n"
+                f"Продолжайте выбирать дни или нажмите «✅ Завершить выбор дней»",
+                reply_markup=get_days_keyboard()
+            )
+        else:
+            selected_days.remove(message.text)
+            await message.answer(
+                f"❌ Удален: {message.text}\n\n"
+                f"Выбранные дни: {', '.join(selected_days)}\n\n"
+                f"Продолжайте выбирать дни или нажмите «✅ Завершить выбор дней»",
+                reply_markup=get_days_keyboard()
+            )
+        
+        await state.update_data(selected_days=selected_days)
+        
+    elif message.text == "✅ Завершить выбор дней":
+        if not selected_days:
+            await message.answer(
+                "❌ Вы не выбрали ни одного дня. Пожалуйста, выберите хотя бы один день:\n\n"
+                "❕ В любой момент вы можете прервать запись, нажав «↩️ В главное меню»",
+                reply_markup=get_days_keyboard()
+            )
+            return
+        
+        # Сохраняем выбранные дни и начинаем ввод времени для каждого дня
+        await state.update_data(selected_days=selected_days)
+        await state.update_data(days_with_times={})  # Словарь для хранения времени по дням
+        await state.update_data(current_day_index=0)  # Индекс текущего дня
+        
+        user_data = await state.get_data()
+        selected_days = user_data['selected_days']
+        
+        # Начинаем с первого дня
+        first_day = selected_days[0]
+        await message.answer(
+            f"✅ Выбраны дни: {', '.join(selected_days)}\n\n"
+            f"⏰ Теперь введите удобное время для {first_day} в формате ЧЧ:MM-ЧЧ:MM\n\n"
+            "Например: 9:00-12:00 или 14:00-16:00\n\n"
+            "❕ В любой момент вы можете прервать запись, нажав «↩️ В главное меню»",
+            reply_markup=get_time_input_keyboard()
+        )
+        await state.set_state(AppointmentState.entering_time_for_days)
+        
+    else:
+        await message.answer(
+            "Пожалуйста, выберите дни недели из предложенных вариантов:\n\n"
+            "❕ В любой момент вы можете прервать запись, нажав «↩️ В главное меню»",
+            reply_markup=get_days_keyboard()
+        )
+
+# Обработка ввода времени для каждого дня
+@dp.message(AppointmentState.entering_time_for_days)
+async def process_time_for_days(message: types.Message, state: FSMContext):
+    if message.text == "↩️ В главное меню":
+        await back_to_main_process(message, state)
+        return
+        
+    user_data = await state.get_data()
+    selected_days = user_data.get('selected_days', [])
+    days_with_times = user_data.get('days_with_times', {})
+    current_day_index = user_data.get('current_day_index', 0)
+    
+    current_day = selected_days[current_day_index]
+    
+    # Проверяем корректность введенного времени
+    is_valid, message_text = is_valid_time_range(message.text.strip())
+    
+    if not is_valid:
+        await message.answer(
+            f"{message_text}\n\n"
+            f"Введите время для {current_day}:\n\n"
+            "❕ В любой момент вы можете прервать запись, нажав «↩️ В главное меню»",
+            reply_markup=get_time_input_keyboard()
+        )
+        return
+    
+    # Сохраняем время для текущего дня
+    days_with_times[current_day] = message.text.strip()
+    await state.update_data(days_with_times=days_with_times)
+    
+    # Переходим к следующему дню
+    next_day_index = current_day_index + 1
+    
+    if next_day_index < len(selected_days):
+        # Есть еще дни для ввода времени
+        next_day = selected_days[next_day_index]
+        await state.update_data(current_day_index=next_day_index)
+        
+        await message.answer(
+            f"✅ Время для {current_day} сохранено: {message.text.strip()}\n\n"
+            f"⏰ Теперь введите удобное время для {next_day} в формате ЧЧ:MM-ЧЧ:MM\n\n"
+            "Например: 9:00-12:00 или 14:00-16:00\n\n"
+            "❕ В любой момент вы можете прервать запись, нажав «↩️ В главное меню»",
+            reply_markup=get_time_input_keyboard()
+        )
+    else:
+        # Все дни обработаны, завершаем запись
+        user_name = user_data['user_name']
+        user_phone = user_data['user_phone']
+        user_situation = user_data.get('user_situation', '')
+        user_id = message.from_user.id
+        
+        # Создаем отдельные записи для каждого дня
+        success = excel_manager.book_multiple_appointments(
+            selected_days, days_with_times, user_name, user_id, user_phone, user_situation
+        )
+        
+        if success:
+            response = (
+                f"✅ Заявка успешно отправлена!\n\n"
+                f"👤 Имя: {user_name}\n"
+                f"📞 Телефон: {user_phone}\n"
             )
             
-    except Exception as e:
-        logger.error(f"Ошибка при чтении записей: {e}")
-        await message.answer("❌ Произошла ошибка при получении ваших записей. Попробуйте позже.")
-
-@dp.message(F.text == "↩️ Назад")
-async def back_to_main(message: types.Message, state: FSMContext):
-    current_state = await state.get_state()
-    if current_state:
+            if user_situation:
+                response += f"📝 Ситуация: {user_situation}\n\n"
+            else:
+                response += "\n"
+                
+            response += f"📅 Выбранные дни и время:\n"
+            for day, time_range in days_with_times.items():
+                response += f"• {day}: {time_range}\n"
+            
+            response += (
+                "\n📞 С вами свяжутся в ближайшее время для уточнения деталей.\n"
+                "Спасибо за вашу заявку!"
+            )
+            
+            await message.answer(response, reply_markup=get_main_keyboard())
+            
+            # Отправляем уведомление администратору
+            user_data['user_id'] = user_id
+            await send_notification_to_admin(user_data, days_with_times)
+            
+        else:
+            await message.answer(
+                "❌ Произошла ошибка при отправке заявки. Пожалуйста, попробуйте позже.",
+                reply_markup=get_main_keyboard()
+            )
+        
         await state.clear()
-    await message.answer("--Главное меню--\n"
-"- «📅 Записаться на прием» - оставить заявку на консультацию\n"
-"- «📋 Мои записи» - просмотр ваших заявок\n"
-"Выберите действие из меню ниже:", reply_markup=get_main_keyboard())
 
-@dp.message(F.text == "🚪 Выход")
-async def exit_process(message: types.Message, state: FSMContext):
+@dp.message(F.text == "↩️ В главное меню")
+async def back_to_main_process(message: types.Message, state: FSMContext):
     current_state = await state.get_state()
     if current_state:
         await state.clear()
@@ -411,98 +577,6 @@ async def exit_process(message: types.Message, state: FSMContext):
             reply_markup=get_main_keyboard()
         )
 
-# Обработка имени
-@dp.message(AppointmentState.user_name)
-async def process_name(message: types.Message, state: FSMContext):
-    if message.text == "🚪 Выход":
-        await exit_process(message, state)
-        return
-        
-    if len(message.text.strip()) < 2:
-        await message.answer("❌ Имя должно содержать хотя бы 2 символа. Пожалуйста, введите ваше имя:", reply_markup=get_exit_keyboard())
-        return
-        
-    await state.update_data(user_name=message.text.strip())
-    await message.answer("📞 Теперь введите ваш номер телефона (в любом формате):", reply_markup=get_exit_keyboard())
-    await state.set_state(AppointmentState.user_phone)
-
-# Обработка телефона
-@dp.message(AppointmentState.user_phone)
-async def process_phone(message: types.Message, state: FSMContext):
-    if message.text == "🚪 Выход":
-        await exit_process(message, state)
-        return
-        
-    phone = message.text.strip()
-    if len(phone) < 5:
-        await message.answer("❌ Номер телефона слишком короткий. Пожалуйста, введите корректный номер:", reply_markup=get_exit_keyboard())
-        return
-        
-    await state.update_data(user_phone=phone)
-    await message.answer(
-        "📝 Опишите кратко вашу ситуацию или проблему, с которой хотите обратиться "
-        "(это поможет психологу лучше подготовиться к встрече):\n\n"
-        "Если не хотите описывать, отправьте \"-\" или \"пропустить\"",
-        reply_markup=get_exit_keyboard()
-    )
-    await state.set_state(AppointmentState.user_situation)
-
-# Обработка ситуации и завершение записи
-@dp.message(AppointmentState.user_situation)
-async def process_situation(message: types.Message, state: FSMContext):
-    if message.text == "🚪 Выход":
-        await exit_process(message, state)
-        return
-        
-    situation = message.text.strip()
-    if situation.lower() in ["-", "пропустить", "нет", "не хочу"]:
-        situation = ""
-        
-    user_data = await state.get_data()
-    chosen_date = user_data['chosen_date']
-    chosen_time = user_data['chosen_time']
-    user_name = user_data['user_name']
-    user_phone = user_data['user_phone']
-    user_id = message.from_user.id
-    
-    # Добавляем user_id в user_data для уведомления
-    user_data['user_id'] = user_id
-    
-    # Записываем в Excel
-    success = excel_manager.book_appointment(chosen_date, chosen_time, user_name, user_id, user_phone, situation)
-    
-    if success:
-        response = (
-            f"✅ Заявка успешно отправлена!\n\n"
-            f"📅 Желаемая дата: {chosen_date}\n"
-            f"⏰ Желаемое время: {chosen_time}\n"
-            f"👤 Имя: {user_name}\n"
-            f"📞 Телефон: {user_phone}\n"
-        )
-        
-        if situation:
-            response += f"📝 Ситуация: {situation}\n\n"
-        else:
-            response += "\n"
-            
-        response += (
-            "📞 С вами свяжутся в ближайшее время для уточнения деталей.\n"
-            "Спасибо за вашу заявку!"
-        )
-        
-        await message.answer(response, reply_markup=get_main_keyboard())
-        
-        # Отправляем уведомление администратору
-        await send_notification_to_admin(user_data, f"{chosen_date} {chosen_time}", situation)
-        
-    else:
-        await message.answer(
-            "❌ Произошла ошибка при отправке заявки. Пожалуйста, попробуйте позже.",
-            reply_markup=get_main_keyboard()
-        )
-    
-    await state.clear()
-
 # Обработка обычных сообщений
 @dp.message()
 async def handle_other_messages(message: types.Message, state: FSMContext):
@@ -513,8 +587,8 @@ async def handle_other_messages(message: types.Message, state: FSMContext):
     if current_state:
         # Если пользователь в процессе записи, но ввел что-то не то
         await message.answer(
-            "Пожалуйста, следуйте инструкциям процесса записи или нажмите «🚪 Выход» для отмены.",
-            reply_markup=get_exit_keyboard()
+            "Пожалуйста, следуйте инструкциям процесса записи или нажмите «↩️ В главное меню» для отмены.",
+            reply_markup=get_back_to_main_keyboard()
         )
     else:
         await message.answer(
@@ -533,6 +607,3 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.run(main())
-
-
-
