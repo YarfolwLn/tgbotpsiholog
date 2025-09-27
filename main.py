@@ -449,7 +449,7 @@ async def process_days_selection(message: types.Message, state: FSMContext):
             f"✅ Выбраны дни: {', '.join(selected_days)}\n\n"
             f"⏰ Теперь введите удобное время для выбранных дней в формате ЧЧ:MM-ЧЧ:MM\n"
             "Например: 9:00-12:00 или 14:00-16:00\n\n"
-            "{first_day}:",
+            f"{first_day}:",
             reply_markup=get_time_input_keyboard()
         )
         await state.set_state(AppointmentState.entering_time_for_days)
@@ -481,7 +481,7 @@ async def process_time_for_days(message: types.Message, state: FSMContext):
         await message.answer(
             f"{message_text}\n\n"
             f"Введите время для выбранного дня\n\n"
-            "{current_day}:",
+            f"{current_day}:",
             reply_markup=get_time_input_keyboard()
         )
         return
@@ -502,7 +502,7 @@ async def process_time_for_days(message: types.Message, state: FSMContext):
             f"✅ День недели: {current_day}, Время: {message.text.strip()}\n\n"
             f"⏰ Теперь введите удобное время для следующего выбранного дня в формате ЧЧ:MM-ЧЧ:MM\n\n"
             "Например: 9:00-12:00 или 14:00-16:00\n\n"
-            "{next_day}:",
+            f"{next_day}:",
             reply_markup=get_time_input_keyboard()
         )
     else:
@@ -596,5 +596,6 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.run(main())
+
 
 
